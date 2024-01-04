@@ -223,6 +223,18 @@ if [ $exitcode -eq 0 ]; then
 	# expand variables $APP_PACKAGE, $APP_ROOT, $JAVAROOT, $USER_HOME (#84)
 	JVMDefaultOptions=$(eval echo "${JVMDefaultOptions}")
 
+	if [[ "$JVMDefaultOptions" != *"-Xmx"* ]]; then
+	    # Ram size in bytes
+	    totalram=$(sysctl -n hw.memsize)
+	
+	    # Ram size in mb
+	    ram_size=$((totalram/1048576))
+	
+	    # Percentage Memory
+	    mem=$(( ram_size*75/100 ))
+	    JVMDefaultOptions+=" -Xmx$((mem))m";
+	fi
+
 	# read StartOnMainThread and add as -XstartOnFirstThread
 	JVMStartOnMainThread=$(plist_get_java ':StartOnMainThread')
 	if [ "${JVMStartOnMainThread}" == "true" ]; then
