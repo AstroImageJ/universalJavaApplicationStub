@@ -356,16 +356,45 @@ int main(int argc, char** argv) {
     if(bootstrapScript != nil && [fileManager isExecutableFileAtPath:bootstrapScript]) {
         execute(bootstrapScript, @[]);
     }
-    if(jvmOptionsFile != nil && [fileManager fileExistsAtPath:jvmOptionsFile]) {
+    if (jvmOptionsFile != nil && [fileManager fileExistsAtPath:jvmOptionsFile]) {
         NSString *optionsFile = [[NSString alloc] initWithData:[fileManager contentsAtPath:jvmOptionsFile] encoding:NSUTF8StringEncoding];
         NSArray *lines = [optionsFile componentsSeparatedByString:@"\n"];
-        for(NSString *line in lines) {
-            if([line hasPrefix:@"#"]) {
+        
+        BOOL hasMaxMemorySetting = NO;
+        
+        for (NSString *line in lines) {
+            if ([line hasPrefix:@"#"]) {
                 continue;
             }
+            
+            if ([line containsString:@"-Xmx"]) {
+                hasMaxMemorySetting = YES; // Found the max memory setting
+            }
+            
             [jvmDefaultOptions addObject:line];
         }
+        
+        // If no max memory setting is present, calculate and add it
+        if (!hasMaxMemorySetting) {
+    		unsigned long long totalRAM = [[NSProcessInfo processInfo] physicalMemory];
+    		unsigned long long maxMemory = (totalRAM * 75) / 100; // 75% of total RAM
+    		double maxMemoryGB = (double)maxMemory / (1024 * 1024 * 1024); // Convert to GB
+    
+    		NSString *maxMemoryOption;
+    		if (maxMemoryGB >= 1) {
+    			// Round down to the nearest whole GB
+    			unsigned long long roundedGB = (unsigned long long)maxMemoryGB;
+    			maxMemoryOption = [NSString stringWithFormat:@"-Xmx%lluG", roundedGB];
+    		} else {
+    			// Specify in MB if less than 1 GB
+    			unsigned long long maxMemoryMB = maxMemory / (1024 * 1024); // Convert to MB
+    			maxMemoryOption = [NSString stringWithFormat:@"-Xmx%lluM", maxMemoryMB];
+    		}
+    
+    		[jvmDefaultOptions addObject:maxMemoryOption];
+    	}
     }
+
     NSMutableArray *allArgs = [[NSMutableArray alloc] init];
     [allArgs addObject:javaCmd];
     [allArgs addObject:@"-cp"];
