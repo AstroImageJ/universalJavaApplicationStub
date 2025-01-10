@@ -2,6 +2,7 @@
 #import <stdlib.h>
 #import <string.h>
 #import <AppKit/AppKit.h>
+#include <sys/sysctl.h>
 
 int main(int argc, char** argv) {
     // For future improvement we can make these localized strings actually have the translations
@@ -376,22 +377,29 @@ int main(int argc, char** argv) {
         
         // If no max memory setting is present, calculate and add it
         if (!hasMaxMemorySetting) {
-    		unsigned long long totalRAM = [[NSProcessInfo processInfo] physicalMemory];
-    		unsigned long long maxMemory = (totalRAM * 75) / 100; // 75% of total RAM
-    		double maxMemoryGB = (double)maxMemory / (1024 * 1024 * 1024); // Convert to GB
-    
-    		NSString *maxMemoryOption;
-    		if (maxMemoryGB >= 1) {
-    			// Round down to the nearest whole GB
-    			unsigned long long roundedGB = (unsigned long long)maxMemoryGB;
-    			maxMemoryOption = [NSString stringWithFormat:@"-Xmx%lluG", roundedGB];
-    		} else {
-    			// Specify in MB if less than 1 GB
-    			unsigned long long maxMemoryMB = maxMemory / (1024 * 1024); // Convert to MB
-    			maxMemoryOption = [NSString stringWithFormat:@"-Xmx%lluM", maxMemoryMB];
-    		}
-    
-    		[jvmDefaultOptions addObject:maxMemoryOption];
+    		// Get total system memory in bytes using sysctl
+            unsigned long long totalRAM = getTotalRAM();
+        
+            if (totalRAM == 0) {
+                NSLog(@"Failed to retrieve total RAM. Skipping max memory calculation.");
+            } else {
+                // Calculate 75% of the total RAM
+                unsigned long long maxMemory = (totalRAM * 75) / 100;
+        
+                NSString *maxMemoryOption;
+                if (maxMemory >= (1024 * 1024 * 1024)) {
+                    // If memory is at least 1 GB, round down to the nearest GB
+                    unsigned long long maxMemoryGB = maxMemory / (1024 * 1024 * 1024); // Convert to GB
+                    maxMemoryOption = [NSString stringWithFormat:@"-Xmx%lluG", maxMemoryGB];
+                } else {
+                    // If memory is less than 1 GB, specify in MB
+                    unsigned long long maxMemoryMB = maxMemory / (1024 * 1024); // Convert to MB
+                    maxMemoryOption = [NSString stringWithFormat:@"-Xmx%lluM", maxMemoryMB];
+                }
+        
+                // Add the calculated max memory option to the JVM options
+                [jvmDefaultOptions addObject:maxMemoryOption];
+            }
     	}
     }
 
@@ -549,5 +557,17 @@ BOOL versionMeetsMaxConstraint(NSString *version, NSString *constraint) {
     } else {
         // no modifier means it must match exactly
         return !exceeds && [constraintParts count] == [versionParts count];
+    }
+}
+
+unsigned long long getTotalRAM() {
+    int64_t physicalMemory = 0;
+    size_t length = sizeof(physicalMemory);
+
+    if (sysctlbyname("hw.memsize", &physicalMemory, &length, NULL, 0) == 0) {
+        return (unsigned long long)physicalMemory;
+    } else {
+        perror("sysctlbyname failed");
+        return 0; // Return 0 if the system call fails
     }
 }
