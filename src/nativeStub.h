@@ -12,4 +12,4 @@ NSString *normalizeJavaVersion(NSString *version);
 BOOL isValidRequirement(NSString *version);
 BOOL versionMeetsConstraint(NSString *version, NSString *constraint, BOOL hasMax);
 BOOL versionMeetsMaxConstraint(NSString *version, NSString *constraint);
-
+unsigned long long getTotalRAM();
