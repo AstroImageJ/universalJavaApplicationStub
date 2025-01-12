@@ -2,7 +2,6 @@
 #import <stdlib.h>
 #import <string.h>
 #import <AppKit/AppKit.h>
-#include <sys/sysctl.h>
 
 int main(int argc, char** argv) {
     // For future improvement we can make these localized strings actually have the translations
@@ -404,17 +403,7 @@ int main(int argc, char** argv) {
 
     // If no max memory setting is present, calculate and add it
     if (!hasMaxMemorySetting) {
-        // Get total system memory in bytes using sysctl
-        int64_t physicalMemory = 0;
-        size_t length = sizeof(physicalMemory);
-        unsigned long long totalRAM = 0;
-
-        if (sysctlbyname("hw.memsize", &physicalMemory, &length, NULL, 0) == 0) {
-            NSLog(@"[%s] [Memory] Found total ram with bytes: %lld", appName, physicalMemory);
-            totalRAM = (unsigned long long)physicalMemory;
-        } else {
-            perror("sysctlbyname failed");
-        }
+        unsigned long long totalRAM = [[NSProcessInfo processInfo] physicalMemory];
 
         if (totalRAM == 0) {
             NSLog(@"[%s] [Memory] %s", appName, "Unable to determine maximum memory.");
