@@ -377,11 +377,12 @@ int main(int argc, char** argv) {
     if(bootstrapScript != nil && [fileManager isExecutableFileAtPath:bootstrapScript]) {
         execute(bootstrapScript, @[]);
     }
-    if (jvmOptionsFile != nil && [fileManager fileExistsAtPath:jvmOptionsFile]) {
+
+    BOOL hasMaxMemorySetting = NO;
+
+    if (jvmOptionsFile != nil && [fileManager fileExistsAtPath:jvmOptionsFile] && YES) {//todo this crashes
         NSString *optionsFile = [[NSString alloc] initWithData:[fileManager contentsAtPath:jvmOptionsFile] encoding:NSUTF8StringEncoding];
         NSArray *lines = [optionsFile componentsSeparatedByString:@"\n"];
-        
-        BOOL hasMaxMemorySetting = NO;
         
         for (NSString *line in lines) {
             // Filter empty lines, otherwise application will fail to start for empty file
@@ -399,33 +400,46 @@ int main(int argc, char** argv) {
             
             [jvmDefaultOptions addObject:line];
         }
-        
-        // If no max memory setting is present, calculate and add it
-        if (!hasMaxMemorySetting) {
-    		// Get total system memory in bytes using sysctl
-            unsigned long long totalRAM = getTotalRAM();
-        
-            if (totalRAM == 0) {
-                NSLog(@"Failed to retrieve total RAM. Skipping max memory calculation.");
+    }
+
+    // If no max memory setting is present, calculate and add it
+    if (!hasMaxMemorySetting) {
+        // Get total system memory in bytes using sysctl
+        int64_t physicalMemory = 0;
+        size_t length = sizeof(physicalMemory);
+        unsigned long long totalRAM = 0;
+
+        if (sysctlbyname("hw.memsize", &physicalMemory, &length, NULL, 0) == 0) {
+            NSLog(@"[%s] [Memory] Found total ram with bytes: %lld", appName, physicalMemory);
+            totalRAM = (unsigned long long)physicalMemory;
+        } else {
+            perror("sysctlbyname failed");
+        }
+
+        if (totalRAM == 0) {
+            NSLog(@"[%s] [Memory] %s", appName, "Unable to determine maximum memory.");
+        } else {
+            // Calculate 75% of the total RAM
+            unsigned long long maxMemory = (totalRAM * 75) / 100;
+
+            NSString *maxMemoryOption;
+            if (maxMemory >= (1024 * 1024 * 1024)) {
+                // If memory is at least 1 GB, round down to the nearest GB
+                unsigned long long maxMemoryGB = maxMemory / (1024 * 1024 * 1024); // Convert to GB
+                NSLog(@"[%s] [Memory] Using automatic memory %lluG", appName, maxMemoryGB);
+                maxMemoryOption = [NSString stringWithFormat:@"-Xmx%lluG", maxMemoryGB];
             } else {
-                // Calculate 75% of the total RAM
-                unsigned long long maxMemory = (totalRAM * 75) / 100;
-        
-                NSString *maxMemoryOption;
-                if (maxMemory >= (1024 * 1024 * 1024)) {
-                    // If memory is at least 1 GB, round down to the nearest GB
-                    unsigned long long maxMemoryGB = maxMemory / (1024 * 1024 * 1024); // Convert to GB
-                    maxMemoryOption = [NSString stringWithFormat:@"-Xmx%lluG", maxMemoryGB];
-                } else {
-                    // If memory is less than 1 GB, specify in MB
-                    unsigned long long maxMemoryMB = maxMemory / (1024 * 1024); // Convert to MB
-                    maxMemoryOption = [NSString stringWithFormat:@"-Xmx%lluM", maxMemoryMB];
-                }
-        
-                // Add the calculated max memory option to the JVM options
-                [jvmDefaultOptions addObject:maxMemoryOption];
+                // If memory is less than 1 GB, specify in MB
+                unsigned long long maxMemoryMB = maxMemory / (1024 * 1024); // Convert to MB
+                NSLog(@"[%s] [Memory] Using automatic memory %lluM", appName, maxMemoryMB);
+                maxMemoryOption = [NSString stringWithFormat:@"-Xmx%lluM", maxMemoryMB];
             }
-    	}
+
+            // Add the calculated max memory option to the JVM options
+            [jvmDefaultOptions addObject:maxMemoryOption];
+        }
+    } else {
+        NSLog(@"[%s] [Memory] %s", appName, "Using specified memory.");
     }
 
     NSMutableArray *allArgs = [[NSMutableArray alloc] init];
@@ -582,17 +596,5 @@ BOOL versionMeetsMaxConstraint(NSString *version, NSString *constraint) {
     } else {
         // no modifier means it must match exactly
         return !exceeds && [constraintParts count] == [versionParts count];
-    }
-}
-
-unsigned long long getTotalRAM() {
-    int64_t physicalMemory = 0;
-    size_t length = sizeof(physicalMemory);
-
-    if (sysctlbyname("hw.memsize", &physicalMemory, &length, NULL, 0) == 0) {
-        return (unsigned long long)physicalMemory;
-    } else {
-        perror("sysctlbyname failed");
-        return 0; // Return 0 if the system call fails
     }
 }
